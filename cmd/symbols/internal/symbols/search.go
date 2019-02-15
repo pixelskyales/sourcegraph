@@ -5,8 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"path"
 	"regexp"
+	"strings"
+	"sync"
 	"time"
+
+	"github.com/jmoiron/sqlx"
+
+	"github.com/sourcegraph/sourcegraph/pkg/api"
 
 	"github.com/sourcegraph/sourcegraph/pkg/pathmatch"
 
@@ -72,34 +79,58 @@ func (s *Service) search(ctx context.Context, args protocol.SearchArgs) (result 
 		tr.Finish()
 	}()
 
-	symbols, err := s.indexedSymbols(ctx, args.Repo, args.CommitID)
+	repoCommit := RepoCommit{
+		RepoName: args.Repo,
+		CommitID: args.CommitID,
+	}
+	fmt.Println(s.dbFilePath(repoCommit))
+	// TODO ensure that a concurrent search request doesn't trigger redundant indexing
+	// TODO measure perf loss due to opening the .sqlite file for each query
+	// index unless already indexed
+
+	db, err := sqlx.Open("sqlite3_with_pcre", s.dbFilePath(repoCommit))
+	defer db.Close()
 	if err != nil {
 		return nil, err
 	}
 
-	const maxFirst = 500
-	if args.First < 0 || args.First > maxFirst {
-		args.First = maxFirst
+	inFlightMutex.Lock()
+	if _, ok := inFlight[repoCommit]; !ok {
+		fmt.Println("Adding to inFlight ➕")
+		inFlight[repoCommit] = &IndexingState{
+			Mutex: &sync.Mutex{},
+			Error: nil,
+		}
+	}
+	inFlight[repoCommit].Mutex.Lock()
+	inFlightMutex.Unlock()
+
+	if _, err := db.Exec(`SELECT 1 FROM symbols LIMIT 1;`); err != nil {
+		fmt.Println("Indexing 📝")
+		inFlight[repoCommit].Error = s.writeSymbols(ctx, db, args)
+	}
+	inFlight[repoCommit].Mutex.Unlock()
+
+	if inFlight[repoCommit].Error != nil {
+		return nil, inFlight[repoCommit].Error
 	}
 
+	fmt.Println("Searching 🔍")
+
 	result = &protocol.SearchResult{}
-	if args.Query == "" && len(args.IncludePatterns) == 0 && args.ExcludePattern == "" {
-		// No filters were provided, save iterating the symbols and return a slice
-		if args.First != 0 && len(symbols) > args.First {
-			symbols = symbols[:args.First]
-		}
-		result.Symbols = symbols
-	} else {
-		res, err := filterSymbols(ctx, symbols, args)
-		if err != nil {
-			return nil, err
-		}
-		result.Symbols = res
+	res, err := filterSymbols(ctx, db, args)
+	if err != nil {
+		return nil, err
 	}
+	result.Symbols = res
 	return result, nil
 }
 
-func filterSymbols(ctx context.Context, symbols []protocol.Symbol, args protocol.SearchArgs) (res []protocol.Symbol, err error) {
+func filterSymbols(ctx context.Context, db *sqlx.DB, args protocol.SearchArgs) (res []protocol.Symbol, err error) {
+	start := time.Now()
+	defer func() {
+		fmt.Printf("filterSymbols %.3f\n", time.Now().Sub(start).Seconds())
+	}()
 	span, _ := opentracing.StartSpanFromContext(ctx, "filterSymbols")
 	defer func() {
 		if err != nil {
@@ -108,7 +139,6 @@ func filterSymbols(ctx context.Context, symbols []protocol.Symbol, args protocol
 		}
 		span.Finish()
 	}()
-	span.SetTag("before", len(symbols))
 
 	query := args.Query
 	if !args.IsRegExp {
@@ -129,17 +159,80 @@ func filterSymbols(ctx context.Context, symbols []protocol.Symbol, args protocol
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("fileFilter.String()", fileFilter.String())
+	fmt.Println("queryRegex", queryRegex)
 
-	for _, symbol := range symbols {
-		if !fileFilter.MatchPath(symbol.Path) || !queryRegex.MatchString(symbol.Name) {
-			continue
-		}
-		res = append(res, symbol)
-		if args.First > 0 && len(res) == args.First {
-			break
-		}
+	const maxFirst = 500
+	if args.First < 0 || args.First > maxFirst {
+		args.First = maxFirst
+	}
+	err = db.Select(&res, "SELECT * FROM symbols WHERE name REGEXP $1 AND path REGEXP $2 LIMIT $3", queryRegex.String(), fileFilter.String(), maxFirst)
+	if err != nil {
+		return nil, err
 	}
 
-	span.SetTag("after", len(res))
+	span.SetTag("hits", len(res))
 	return res, nil
+}
+
+const symbolsDbVersion = 1
+
+func (s *Service) dbFilePath(repoCommit RepoCommit) string {
+	return path.Join(s.Path, fmt.Sprintf("v%d-%s@%s.sqlite", symbolsDbVersion, strings.Replace(string(repoCommit.RepoName), "/", "-", -1), repoCommit.CommitID))
+}
+
+type RepoCommit struct {
+	RepoName api.RepoName
+	CommitID api.CommitID
+}
+
+type IndexingState struct {
+	Mutex *sync.Mutex
+	Error error
+}
+
+var inFlightMutex = &sync.Mutex{}
+var inFlight = map[RepoCommit]*IndexingState{}
+
+func (s *Service) writeSymbols(ctx context.Context, db *sqlx.DB, args protocol.SearchArgs) error {
+	symbols, err := s.parseUncached(ctx, args.Repo, args.CommitID)
+
+	if err != nil {
+		return err
+	}
+
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(
+		`CREATE TABLE IF NOT EXISTS symbols (
+			name VARCHAR(256) NOT NULL,
+			path VARCHAR(4096) NOT NULL,
+			line INT NOT NULL,
+			kind VARCHAR(255) NOT NULL,
+			language VARCHAR(255) NOT NULL,
+			parent VARCHAR(255) NOT NULL,
+			parent_kind VARCHAR(255) NOT NULL,
+			signature VARCHAR(255) NOT NULL,
+			pattern VARCHAR(255) NOT NULL,
+			file_limited BOOLEAN NOT NULL
+		)`)
+	if err != nil {
+		return err
+	}
+
+	for _, symbol := range symbols {
+		_, err := tx.NamedExec("INSERT INTO symbols (name, path, line, kind, language, parent, parent_kind, signature, pattern, file_limited) VALUES (:name, :path, :line, :kind, :language, :parent, :parent_kind, :signature, :pattern, :file_limited)", &symbol)
+		if err != nil {
+			return err
+		}
+	}
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

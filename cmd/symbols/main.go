@@ -3,6 +3,7 @@
 package main
 
 import (
+	"database/sql"
 	"context"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"strconv"
 	"time"
 
+  sqlite3 "github.com/mattn/go-sqlite3"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -44,6 +46,12 @@ func main() {
 	env.HandleHelpFlag()
 	log.SetFlags(0)
 	tracer.Init()
+
+	sql.Register("sqlite3_with_pcre", &sqlite3.SQLiteDriver{
+		Extensions: []string{
+			"/Users/chrismwendt/github.com/ralight/sqlite3-pcre/libsqlite3-regexp.dylib",
+		},
+	})
 
 	go debugserver.Start()
 
@@ -83,6 +91,8 @@ func main() {
 	server := &http.Server{Addr: addr, Handler: handler}
 	go shutdownOnSIGINT(server)
 
+	go everyMinute(cleanCache)
+
 	log15.Info("symbols: listening", "addr", addr)
 	err = server.ListenAndServe()
 	if err != http.ErrServerClosed {
@@ -100,4 +110,15 @@ func shutdownOnSIGINT(s *http.Server) {
 	if err != nil {
 		log.Fatal("graceful server shutdown failed, will exit:", err)
 	}
+}
+
+func everyMinute(f func()) {
+	for {
+		f()
+		time.Sleep(time.Second)
+	}
+}
+
+func cleanCache() {
+	// fmt.Println("Would clean cache")
 }

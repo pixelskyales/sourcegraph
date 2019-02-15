@@ -46,15 +46,15 @@ type SearchResult struct {
 
 // Symbol is a code symbol.
 type Symbol struct {
-	Name       string
-	Path       string
-	Line       int
-	Kind       string
-	Language   string
-	Parent     string
-	ParentKind string
-	Signature  string
-	Pattern    string
+	Name       string `db:"name"`
+	Path       string `db:"path"`
+	Line       int    `db:"line"`
+	Kind       string `db:"kind"`
+	Language   string `db:"language"`
+	Parent     string `db:"parent"`
+	ParentKind string `db:"parent_kind"`
+	Signature  string `db:"signature"`
+	Pattern    string `db:"pattern"`
 
-	FileLimited bool
+	FileLimited bool `db:"file_limited"`
 }

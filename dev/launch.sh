@@ -84,7 +84,7 @@ yarn_pid=''
 }
 
 # Build the symbols image
-env IMAGE=dev-symbols ./cmd/symbols/build.sh >/dev/null
+# env IMAGE=dev-symbols ./cmd/symbols/build.sh >/dev/null
 symbols_pid="$!"
 rm -rf /tmp/symbols-cache
 
