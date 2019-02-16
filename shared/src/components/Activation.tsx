@@ -326,9 +326,9 @@ export class ActivateConfetti extends React.PureComponent<ActivateConfettiProps,
                     <Confetti
                         active={this.state.activated}
                         config={{
-                            angle: 180,
-                            spread: 45,
-                            startVelocity: 45,
+                            angle: 90,
+                            spread: 90,
+                            startVelocity: 20,
                             elementCount: 50,
                             dragFriction: 0.1,
                             duration: 3000,
