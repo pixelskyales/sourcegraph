@@ -33,8 +33,6 @@ export class ActivationStatus {
         this.steps_ = steps
         this.fetchCompleted = fetchCompleted
         this.completed_ = new BehaviorSubject<{ [key: string]: boolean } | null>(null)
-
-        console.log('# steps', steps)
     }
 
     public get steps(): ActivationStep[] {
