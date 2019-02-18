@@ -248,6 +248,7 @@ const percentageDone = (info?: { [key: string]: boolean }): number => {
 
 interface ActivateConfettiState {
     activated?: boolean
+    animate?: boolean
 }
 
 interface ActivateConfettiProps {
@@ -316,33 +317,14 @@ export class ActivateConfetti extends React.PureComponent<ActivateConfettiProps,
             e.stopPropagation()
             setTimeout(this.props.pauseAndRetrigger, 1000)
         }
-        this.setState({ activated: true })
+        this.setState({ activated: true, animate: !this.state.activated })
     }
 
     public render(): JSX.Element | null {
-        return this.props.activation ? (
-            <div onClick={this.clicked}>
-                {this.state.activated !== undefined && (
-                    <Confetti
-                        active={this.state.activated}
-                        config={{
-                            angle: 90,
-                            spread: 90,
-                            startVelocity: 20,
-                            elementCount: 50,
-                            dragFriction: 0.1,
-                            duration: 3000,
-                            delay: 0,
-                            width: '10px',
-                            height: '10px',
-                            colors: ['#a864fd', '#29cdff', '#78ff44', '#ff718d', '#fdff6a'],
-                        }}
-                    />
-                )}
+        return (
+            <div onClick={this.clicked} className={`first-use-button ${this.state.animate ? 'animate' : ''}`}>
                 {this.props.children}
             </div>
-        ) : (
-            <div>{this.props.children}</div>
         )
     }
 }
