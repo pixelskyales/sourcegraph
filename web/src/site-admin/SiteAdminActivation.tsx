@@ -34,7 +34,7 @@ export const newActivationStatus = (isSiteAdmin: boolean) =>
                 action: (h: H.History) => h.push('/search'),
             },
             {
-                id: 'didCodeIntelligence',
+                id: 'action:findReferences',
                 title: 'Find references',
                 detail:
                     'To find references of a token, navigate to a code file in one of your repositories, hover over a token to activate the tooltip, and then click &ldquo;Find references&rdquo;.',
@@ -83,7 +83,7 @@ const fetchActivationStatus = (isSiteAdmin: boolean) => () =>
                       currentUser {
                           usageStatistics {
                               searchQueries
-                              codeIntelligenceActions
+                              findRefsActions
                           }
                       }
                   }
@@ -98,7 +98,7 @@ const fetchActivationStatus = (isSiteAdmin: boolean) => () =>
                     data.repositories && data.repositories.totalCount !== null && data.repositories.totalCount > 0,
                 enabledSignOn: !!(authProviders && authProviders.filter(p => !p.isBuiltin).length > 0),
                 didSearch: !!data.currentUser && data.currentUser.usageStatistics.searchQueries > 0,
-                didCodeIntelligence: !!data.currentUser && data.currentUser.usageStatistics.codeIntelligenceActions > 0,
+                'action:findReferences': !!data.currentUser && data.currentUser.usageStatistics.findRefsActions > 0,
             }
         })
     )

@@ -208,7 +208,7 @@ export class ActionItem extends React.PureComponent<Props, State> {
             >
                 <ActivateConfetti
                     activation={this.props.activation}
-                    activationKeys={['didCodeIntelligence']}
+                    activationKeys={['action:' + this.props.action.id]}
                     pauseAndRetrigger={this.retrigger}
                 >
                     {/* Use custom CSS classes instead of Bootstrap CSS classes because this component is also

@@ -27,11 +27,10 @@ class ServerAdminWrapper {
         if (this.isAuthenicated) {
             if (eventAction === 'SearchSubmitted') {
                 logUserEvent(GQL.UserEvent.SEARCHQUERY)
-            } else if (
-                eventAction === 'goToDefinition' ||
-                eventAction === 'goToDefinition.preloaded' ||
-                eventAction === 'findReferences'
-            ) {
+            } else if (eventAction === 'findReferences') {
+                logUserEvent(GQL.UserEvent.CODEINTEL)
+                logUserEvent(GQL.UserEvent.CODEINTELREFS)
+            } else if (eventAction === 'goToDefinition' || eventAction === 'goToDefinition.preloaded') {
                 logUserEvent(GQL.UserEvent.CODEINTEL)
             }
         }
